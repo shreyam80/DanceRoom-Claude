@@ -13,7 +13,7 @@ async def create_organization(body: OrganizationCreate, current_user: dict = Dep
 
     org = supabase.table("organizations").insert({
         "name": body.name,
-        "type": body.type,
+        "type": body.type or "",
         "created_by_user_id": current_user["user_id"],
     }).execute()
     if not org.data:
@@ -54,7 +54,7 @@ async def get_organization(organization_id: str, current_user: dict = Depends(ge
         .eq("organization_id", organization_id) \
         .maybe_single() \
         .execute()
-    if not org.data:
+    if not org or not org.data:
         raise HTTPException(status_code=404, detail="Organization not found")
 
     teams = supabase.table("teams").select("*").eq("organization_id", organization_id).execute()

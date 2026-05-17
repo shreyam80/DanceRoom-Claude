@@ -4,6 +4,9 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
+import OrganizationNewPage from './pages/OrganizationNewPage'
+import OrganizationPage from './pages/OrganizationPage'
+import TeamPage from './pages/TeamPage'
 
 export default function App() {
   return (
@@ -17,19 +20,17 @@ export default function App() {
             <ProtectedRoute><Dashboard /></ProtectedRoute>
           } />
 
-          {/* Placeholder routes — filled in Phase 4–7 */}
-          <Route path="/organizations" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">Organizations — coming in Phase 4</div></ProtectedRoute>
-          } />
           <Route path="/organizations/new" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">New org — coming in Phase 4</div></ProtectedRoute>
+            <ProtectedRoute><OrganizationNewPage /></ProtectedRoute>
           } />
           <Route path="/organizations/:organizationId" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">Org detail — coming in Phase 4</div></ProtectedRoute>
+            <ProtectedRoute><OrganizationPage /></ProtectedRoute>
           } />
           <Route path="/teams/:teamId" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">Team — coming in Phase 4</div></ProtectedRoute>
+            <ProtectedRoute><TeamPage /></ProtectedRoute>
           } />
+
+          {/* Placeholder routes — filled in Phase 5–7 */}
           <Route path="/routines/:routineId" element={
             <ProtectedRoute><div className="p-8 text-gray-500">Routine — coming in Phase 5</div></ProtectedRoute>
           } />

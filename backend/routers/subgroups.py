@@ -24,7 +24,7 @@ async def create_subgroup(body: SubgroupCreate, current_user: dict = Depends(get
 @router.get("/{subgroup_id}")
 async def get_subgroup(subgroup_id: str, current_user: dict = Depends(get_current_user)):
     sg = supabase.table("subgroups").select("*").eq("subgroup_id", subgroup_id).maybe_single().execute()
-    if not sg.data:
+    if not sg or not sg.data:
         raise HTTPException(status_code=404, detail="Subgroup not found")
 
     member_rows = supabase.table("subgroup_members") \
@@ -52,16 +52,16 @@ async def add_subgroup_member(subgroup_id: str, body: AddSubgroupMember, current
         raise HTTPException(status_code=403, detail="Only choreographers can manage subgroup members")
 
     sg = supabase.table("subgroups").select("team_id").eq("subgroup_id", subgroup_id).maybe_single().execute()
-    if not sg.data:
+    if not sg or not sg.data:
         raise HTTPException(status_code=404, detail="Subgroup not found")
 
     is_member = supabase.table("team_members") \
         .select("team_member_id") \
         .eq("team_id", sg.data["team_id"]) \
         .eq("user_id", body.user_id) \
-        .maybe_single() \
+        .limit(1) \
         .execute()
-    if not is_member.data:
+    if not is_member or not is_member.data:
         raise HTTPException(status_code=400, detail="User must be a team member before joining a subgroup")
 
     result = supabase.table("subgroup_members").insert({

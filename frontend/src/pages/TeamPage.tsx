@@ -1,0 +1,410 @@
+import { useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import api from '../lib/api'
+
+interface User {
+  user_id: string
+  full_name: string
+  email: string
+  username: string
+  role: string
+}
+
+interface TeamMember {
+  team_member_id: string
+  user_id: string
+  role: string
+  status: string
+  user: User | null
+}
+
+interface Subgroup {
+  subgroup_id: string
+  name: string
+}
+
+interface SubgroupMember {
+  user_id: string
+  user: User | null
+}
+
+interface SubgroupDetail extends Subgroup {
+  members: SubgroupMember[]
+}
+
+interface Routine {
+  routine_id: string
+  title: string
+}
+
+interface Team {
+  team_id: string
+  organization_id: string
+  name: string
+  description: string | null
+  members: TeamMember[]
+  subgroups: Subgroup[]
+  routines: Routine[]
+}
+
+export default function TeamPage() {
+  const { teamId } = useParams<{ teamId: string }>()
+  const navigate = useNavigate()
+  const { profile, signOut } = useAuth()
+  const [team, setTeam] = useState<Team | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const [memberEmail, setMemberEmail] = useState('')
+  const [memberLoading, setMemberLoading] = useState(false)
+  const [memberError, setMemberError] = useState('')
+  const [memberSuccess, setMemberSuccess] = useState('')
+
+  const [showSubgroupForm, setShowSubgroupForm] = useState(false)
+  const [newSubgroupName, setNewSubgroupName] = useState('')
+  const [subgroupLoading, setSubgroupLoading] = useState(false)
+  const [subgroupError, setSubgroupError] = useState('')
+
+  const [expandedSubgroup, setExpandedSubgroup] = useState<string | null>(null)
+  const [subgroupDetails, setSubgroupDetails] = useState<Record<string, SubgroupDetail>>({})
+  const [addingToSubgroup, setAddingToSubgroup] = useState<Record<string, string>>({})
+  const [sgMemberLoading, setSgMemberLoading] = useState<Record<string, boolean>>({})
+  const [sgMemberError, setSgMemberError] = useState<Record<string, string>>({})
+
+  const [showRoutineForm, setShowRoutineForm] = useState(false)
+  const [routineTitle, setRoutineTitle] = useState('')
+  const [routineLoading, setRoutineLoading] = useState(false)
+  const [routineError, setRoutineError] = useState('')
+
+  useEffect(() => {
+    if (!teamId) return
+    api.get(`/teams/${teamId}`)
+      .then(r => setTeam(r.data))
+      .catch(() => setError('Team not found'))
+      .finally(() => setLoading(false))
+  }, [teamId])
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
+  }
+
+  async function handleAddMember(e: FormEvent) {
+    e.preventDefault()
+    setMemberError('')
+    setMemberSuccess('')
+    setMemberLoading(true)
+    try {
+      const res = await api.post(`/teams/${teamId}/members`, { email: memberEmail })
+      setTeam(prev => prev ? { ...prev, members: [...prev.members, res.data] } : prev)
+      setMemberSuccess(`${res.data.user?.full_name || memberEmail} added to the team.`)
+      setMemberEmail('')
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string }
+      const detail = axiosErr?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : axiosErr?.message ?? 'Failed to add member'
+      setMemberError(msg)
+    } finally {
+      setMemberLoading(false)
+    }
+  }
+
+  async function handleCreateSubgroup(e: FormEvent) {
+    e.preventDefault()
+    setSubgroupError('')
+    setSubgroupLoading(true)
+    try {
+      const res = await api.post('/subgroups', { team_id: teamId, name: newSubgroupName })
+      setTeam(prev => prev ? { ...prev, subgroups: [...prev.subgroups, res.data] } : prev)
+      setNewSubgroupName('')
+      setShowSubgroupForm(false)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSubgroupError(detail || 'Failed to create subgroup')
+    } finally {
+      setSubgroupLoading(false)
+    }
+  }
+
+  async function handleExpandSubgroup(subgroupId: string) {
+    if (expandedSubgroup === subgroupId) {
+      setExpandedSubgroup(null)
+      return
+    }
+    setExpandedSubgroup(subgroupId)
+    if (!subgroupDetails[subgroupId]) {
+      const res = await api.get(`/subgroups/${subgroupId}`)
+      setSubgroupDetails(prev => ({ ...prev, [subgroupId]: res.data }))
+    }
+  }
+
+  async function handleAddSubgroupMember(subgroupId: string) {
+    const userId = addingToSubgroup[subgroupId]
+    if (!userId) return
+    setSgMemberLoading(prev => ({ ...prev, [subgroupId]: true }))
+    setSgMemberError(prev => ({ ...prev, [subgroupId]: '' }))
+    try {
+      await api.post(`/subgroups/${subgroupId}/members`, { user_id: userId })
+      const memberUser = team?.members.find(m => m.user_id === userId)?.user ?? null
+      setSubgroupDetails(prev => ({
+        ...prev,
+        [subgroupId]: {
+          ...prev[subgroupId],
+          members: [...(prev[subgroupId]?.members ?? []), { user_id: userId, user: memberUser }],
+        },
+      }))
+      setAddingToSubgroup(prev => ({ ...prev, [subgroupId]: '' }))
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSgMemberError(prev => ({ ...prev, [subgroupId]: detail || 'Failed to add member' }))
+    } finally {
+      setSgMemberLoading(prev => ({ ...prev, [subgroupId]: false }))
+    }
+  }
+
+  async function handleCreateRoutine(e: FormEvent) {
+    e.preventDefault()
+    setRoutineError('')
+    setRoutineLoading(true)
+    try {
+      const res = await api.post('/routines', { team_id: teamId, title: routineTitle })
+      navigate(`/routines/${res.data.routine_id}`)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setRoutineError(detail || 'Failed to create routine')
+      setRoutineLoading(false)
+    }
+  }
+
+  const isChoreographer = profile?.role === 'choreographer'
+  const dancers = team?.members.filter(m => m.role === 'dancer') ?? []
+
+  if (loading) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Loading…</p></div>
+  }
+  if (error || !team) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-red-500">{error || 'Not found'}</p></div>
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <nav className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm text-gray-700 font-medium">{team.name}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-600">{profile?.full_name}</span>
+          <button onClick={handleSignOut} className="text-sm text-gray-500 hover:text-gray-700">Sign out</button>
+        </div>
+      </nav>
+
+      <main className="max-w-4xl mx-auto px-6 py-12 space-y-10">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">{team.name}</h1>
+          {team.description && <p className="text-gray-500 text-sm mt-1">{team.description}</p>}
+        </div>
+
+        {/* Members */}
+        <section>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Members</h2>
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+            {team.members.length === 0 && (
+              <div className="px-5 py-4 text-sm text-gray-400">No members yet.</div>
+            )}
+            {team.members.map(m => (
+              <div key={m.team_member_id} className="px-5 py-3 flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-gray-900">{m.user?.full_name ?? m.user_id}</span>
+                  <span className="ml-2 text-xs text-gray-400">{m.user?.email}</span>
+                </div>
+                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{m.role}</span>
+              </div>
+            ))}
+          </div>
+
+          {isChoreographer && (
+            <form onSubmit={handleAddMember} className="mt-3 flex gap-2">
+              <input
+                type="email"
+                required
+                value={memberEmail}
+                onChange={e => { setMemberEmail(e.target.value); setMemberSuccess('') }}
+                placeholder="Add dancer by email…"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <button
+                type="submit"
+                disabled={memberLoading}
+                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {memberLoading ? '…' : 'Add'}
+              </button>
+            </form>
+          )}
+          {memberError && <p className="text-sm text-red-600 mt-2">{memberError}</p>}
+          {memberSuccess && <p className="text-sm text-green-600 mt-2">{memberSuccess}</p>}
+        </section>
+
+        {/* Subgroups */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-gray-900">Subgroups</h2>
+            {isChoreographer && !showSubgroupForm && (
+              <button
+                onClick={() => setShowSubgroupForm(true)}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                + New subgroup
+              </button>
+            )}
+          </div>
+
+          {showSubgroupForm && (
+            <form onSubmit={handleCreateSubgroup} className="bg-white border border-brand-200 rounded-xl p-4 mb-3 flex gap-2">
+              <input
+                type="text"
+                required
+                value={newSubgroupName}
+                onChange={e => setNewSubgroupName(e.target.value)}
+                placeholder="Subgroup name"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              {subgroupError && <p className="text-sm text-red-600">{subgroupError}</p>}
+              <button type="button" onClick={() => setShowSubgroupForm(false)} className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={subgroupLoading} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium">
+                {subgroupLoading ? '…' : 'Create'}
+              </button>
+            </form>
+          )}
+
+          {team.subgroups.length === 0 && !showSubgroupForm ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 text-center text-sm text-gray-400">
+              No subgroups yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {team.subgroups.map(sg => {
+                const detail = subgroupDetails[sg.subgroup_id]
+                const isExpanded = expandedSubgroup === sg.subgroup_id
+                const alreadyInSubgroup = new Set(detail?.members.map(m => m.user_id) ?? [])
+                const availableDancers = dancers.filter(d => !alreadyInSubgroup.has(d.user_id))
+
+                return (
+                  <div key={sg.subgroup_id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => handleExpandSubgroup(sg.subgroup_id)}
+                      className="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+                    >
+                      <span className="text-sm font-medium text-gray-900">{sg.name}</span>
+                      <span className="text-xs text-gray-400">{isExpanded ? '▲' : '▼'}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-gray-100 px-5 py-4 space-y-3">
+                        {!detail ? (
+                          <p className="text-sm text-gray-400">Loading…</p>
+                        ) : detail.members.length === 0 ? (
+                          <p className="text-sm text-gray-400">No members yet.</p>
+                        ) : (
+                          detail.members.map(m => (
+                            <div key={m.user_id} className="flex items-center gap-2 text-sm text-gray-700">
+                              <span>{m.user?.full_name ?? m.user_id}</span>
+                              <span className="text-xs text-gray-400">{m.user?.email}</span>
+                            </div>
+                          ))
+                        )}
+
+                        {isChoreographer && availableDancers.length > 0 && (
+                          <div className="flex gap-2 pt-1">
+                            <select
+                              value={addingToSubgroup[sg.subgroup_id] ?? ''}
+                              onChange={e => setAddingToSubgroup(prev => ({ ...prev, [sg.subgroup_id]: e.target.value }))}
+                              className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                            >
+                              <option value="">Add a dancer…</option>
+                              {availableDancers.map(d => (
+                                <option key={d.user_id} value={d.user_id}>
+                                  {d.user?.full_name} ({d.user?.email})
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleAddSubgroupMember(sg.subgroup_id)}
+                              disabled={!addingToSubgroup[sg.subgroup_id] || sgMemberLoading[sg.subgroup_id]}
+                              className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+                            >
+                              {sgMemberLoading[sg.subgroup_id] ? '…' : 'Add'}
+                            </button>
+                          </div>
+                        )}
+                        {sgMemberError[sg.subgroup_id] && (
+                          <p className="text-sm text-red-600">{sgMemberError[sg.subgroup_id]}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Routines */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-gray-900">Routines</h2>
+            {isChoreographer && !showRoutineForm && (
+              <button
+                onClick={() => setShowRoutineForm(true)}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                + New routine
+              </button>
+            )}
+          </div>
+
+          {showRoutineForm && (
+            <form onSubmit={handleCreateRoutine} className="bg-white border border-brand-200 rounded-xl p-4 mb-3 flex gap-2">
+              <input
+                type="text"
+                required
+                value={routineTitle}
+                onChange={e => setRoutineTitle(e.target.value)}
+                placeholder="Routine title"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              {routineError && <p className="text-sm text-red-600">{routineError}</p>}
+              <button type="button" onClick={() => setShowRoutineForm(false)} className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={routineLoading} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium">
+                {routineLoading ? 'Creating…' : 'Create'}
+              </button>
+            </form>
+          )}
+
+          {team.routines.length === 0 && !showRoutineForm ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 text-center text-sm text-gray-400">
+              No routines yet.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {team.routines.map(r => (
+                <button
+                  key={r.routine_id}
+                  onClick={() => navigate(`/routines/${r.routine_id}`)}
+                  className="bg-white border border-gray-200 hover:border-brand-300 rounded-xl p-5 text-left transition-colors"
+                >
+                  <div className="font-medium text-gray-900">{r.title}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  )
+}

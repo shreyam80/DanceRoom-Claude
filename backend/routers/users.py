@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from database import supabase
-from auth import get_current_user
+from auth import get_current_user, get_current_auth_user
 from models.schemas import UserUpsert
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("")
-async def upsert_user(body: UserUpsert, current_user: dict = Depends(get_current_user)):
+async def upsert_user(body: UserUpsert, current_user=Depends(get_current_auth_user)):
     result = supabase.table("users").upsert(
         {
             "user_id": body.user_id,

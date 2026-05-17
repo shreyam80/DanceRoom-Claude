@@ -71,14 +71,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
 
     // Explicitly create the profile via the API — reliable regardless of trigger state.
-    // The backend upserts, so it's safe to call even if the trigger already ran.
-    if (data.user) {
+    // Pass the token directly because getSession() may not reflect the new session yet.
+    if (data.user && data.session) {
       await api.post('/users', {
         user_id: data.user.id,
         email,
         full_name: fullName,
         username,
         role,
+      }, {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
       })
     }
 

@@ -6,6 +6,22 @@ from models.schemas import TeamCreate, AddMemberByEmail
 router = APIRouter(prefix="/teams", tags=["teams"])
 
 
+@router.get("")
+async def list_my_teams(current_user: dict = Depends(get_current_user)):
+    rows = supabase.table("team_members") \
+        .select("team_id") \
+        .eq("user_id", current_user["user_id"]) \
+        .eq("status", "active") \
+        .execute()
+
+    if not rows.data:
+        return []
+
+    team_ids = [r["team_id"] for r in rows.data]
+    result = supabase.table("teams").select("*").in_("team_id", team_ids).execute()
+    return result.data or []
+
+
 @router.post("")
 async def create_team(body: TeamCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "choreographer":
@@ -35,7 +51,7 @@ async def create_team(body: TeamCreate, current_user: dict = Depends(get_current
 @router.get("/{team_id}")
 async def get_team(team_id: str, current_user: dict = Depends(get_current_user)):
     team = supabase.table("teams").select("*").eq("team_id", team_id).maybe_single().execute()
-    if not team.data:
+    if not team or not team.data:
         raise HTTPException(status_code=404, detail="Team not found")
 
     members_rows = supabase.table("team_members") \
@@ -95,30 +111,45 @@ async def add_team_member(team_id: str, body: AddMemberByEmail, current_user: di
     if current_user["role"] != "choreographer":
         raise HTTPException(status_code=403, detail="Only choreographers can add team members")
 
-    user = supabase.table("users").select("*").eq("email", body.email).maybe_single().execute()
-    if not user.data:
+    try:
+        user_res = supabase.table("users").select("*").eq("email", body.email).maybe_single().execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"User lookup failed: {e}")
+
+    if not user_res or not user_res.data:
         raise HTTPException(
             status_code=404,
             detail=f"No account found for {body.email}. They must sign up first.",
         )
 
-    existing = supabase.table("team_members") \
-        .select("team_member_id") \
-        .eq("team_id", team_id) \
-        .eq("user_id", user.data["user_id"]) \
-        .maybe_single() \
-        .execute()
-    if existing.data:
+    try:
+        existing = supabase.table("team_members") \
+            .select("team_member_id") \
+            .eq("team_id", team_id) \
+            .eq("user_id", user_res.data["user_id"]) \
+            .limit(1) \
+            .execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Membership check failed: {e}")
+
+    if existing and existing.data:
         raise HTTPException(status_code=400, detail="This person is already a team member")
 
-    result = supabase.table("team_members").insert({
-        "team_id": team_id,
-        "user_id": user.data["user_id"],
-        "role": "dancer",
-        "status": "active",
-    }).execute()
+    try:
+        result = supabase.table("team_members").insert({
+            "team_id": team_id,
+            "user_id": user_res.data["user_id"],
+            "role": "dancer",
+            "status": "active",
+        }).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Insert returned no data — check team_members constraints")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Insert failed: {e}")
 
-    return {**result.data[0], "user": user.data}
+    return {**result.data[0], "user": user_res.data}
 
 
 @router.get("/{team_id}/subgroups")

@@ -24,7 +24,7 @@ async def create_routine(body: RoutineCreate, current_user: dict = Depends(get_c
 @router.get("/{routine_id}")
 async def get_routine(routine_id: str, current_user: dict = Depends(get_current_user)):
     routine = supabase.table("routines").select("*").eq("routine_id", routine_id).maybe_single().execute()
-    if not routine.data:
+    if not routine or not routine.data:
         raise HTTPException(status_code=404, detail="Routine not found")
 
     videos = supabase.table("videos") \

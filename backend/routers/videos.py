@@ -36,7 +36,7 @@ async def create_video(body: VideoCreate, current_user: dict = Depends(get_curre
 @router.get("/{video_id}")
 async def get_video(video_id: str, current_user: dict = Depends(get_current_user)):
     result = supabase.table("videos").select("*").eq("video_id", video_id).maybe_single().execute()
-    if not result.data:
+    if not result or not result.data:
         raise HTTPException(status_code=404, detail="Video not found")
 
     routine = supabase.table("routines") \
@@ -45,7 +45,7 @@ async def get_video(video_id: str, current_user: dict = Depends(get_current_user
         .maybe_single() \
         .execute()
 
-    return {**result.data, "routine": routine.data}
+    return {**result.data, "routine": routine.data if routine else None}
 
 
 @router.get("/{video_id}/comments")
