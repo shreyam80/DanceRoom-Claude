@@ -2,7 +2,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { profile, signOut } = useAuth()
+  const { profile, profileError, refreshProfile, signOut } = useAuth()
   const navigate = useNavigate()
 
   async function handleSignOut() {
@@ -10,7 +10,34 @@ export default function Dashboard() {
     navigate('/login')
   }
 
-  if (!profile) return null
+  // Profile still loading or failed — show error with retry instead of blank
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-4">
+        <p className="text-gray-500 text-sm">
+          {profileError
+            ? `Could not load your profile: ${profileError}`
+            : 'Loading your profile…'}
+        </p>
+        {profileError && (
+          <div className="flex gap-3">
+            <button
+              onClick={refreshProfile}
+              className="text-sm bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700"
+            >
+              Retry
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -66,7 +93,8 @@ export default function Dashboard() {
         {profile.role === 'dancer' && (
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <p className="text-gray-500 text-sm">
-              Ask your choreographer to add you to a team using your email: <strong>{profile.email}</strong>
+              Ask your choreographer to add you using your email:{' '}
+              <strong className="text-gray-900">{profile.email}</strong>
             </p>
           </div>
         )}

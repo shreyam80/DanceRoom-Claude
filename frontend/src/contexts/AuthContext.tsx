@@ -17,9 +17,11 @@ interface AuthContextValue {
   session: Session | null
   profile: UserProfile | null
   loading: boolean
+  profileError: string | null
   signUp: (email: string, password: string, fullName: string, username: string, role: string) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -28,13 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileError, setProfileError] = useState<string | null>(null)
 
   async function fetchProfile() {
     try {
       const res = await api.get('/users/me')
       setProfile(res.data)
-    } catch {
+      setProfileError(null)
+    } catch (err: unknown) {
       setProfile(null)
+      const msg = err instanceof Error ? err.message : String(err)
+      // Extract the detail from axios error response
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setProfileError(detail || msg || 'Could not load profile')
     }
   }
 
@@ -48,35 +56,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
       if (newSession) fetchProfile()
-      else setProfile(null)
+      else { setProfile(null); setProfileError(null) }
     })
 
     return () => listener.subscription.unsubscribe()
   }, [])
 
   async function signUp(email: string, password: string, fullName: string, username: string, role: string) {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName, username, role } },
     })
     if (error) throw error
+
+    // Explicitly create the profile via the API — reliable regardless of trigger state.
+    // The backend upserts, so it's safe to call even if the trigger already ran.
+    if (data.user) {
+      await api.post('/users', {
+        user_id: data.user.id,
+        email,
+        full_name: fullName,
+        username,
+        role,
+      })
+    }
+
+    await fetchProfile()
   }
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
-    await fetchProfile()
+
+    // Try to fetch the profile; if it's missing (404), create it from auth metadata
+    try {
+      const res = await api.get('/users/me')
+      setProfile(res.data)
+      setProfileError(null)
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 404 && data.user) {
+        const meta = data.user.user_metadata ?? {}
+        await api.post('/users', {
+          user_id: data.user.id,
+          email: data.user.email,
+          full_name: meta.full_name ?? '',
+          username: meta.username ?? '',
+          role: meta.role ?? 'dancer',
+        })
+        await fetchProfile()
+      } else {
+        throw err
+      }
+    }
   }
 
   async function signOut() {
     await supabase.auth.signOut()
     setProfile(null)
     setSession(null)
+    setProfileError(null)
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, loading, profileError, signUp, signIn, signOut, refreshProfile: fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
