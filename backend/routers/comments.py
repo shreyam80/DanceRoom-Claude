@@ -88,7 +88,7 @@ async def acknowledge_comment(comment_id: str, current_user: dict = Depends(get_
 async def resolve_comment(comment_id: str, current_user: dict = Depends(get_current_user)):
     comment = supabase.table("comments").select("author_user_id, status") \
         .eq("comment_id", comment_id).maybe_single().execute()
-    if not comment.data:
+    if not comment or not comment.data:
         raise HTTPException(status_code=404, detail="Comment not found")
 
     is_author = comment.data["author_user_id"] == current_user["user_id"]
@@ -96,10 +96,10 @@ async def resolve_comment(comment_id: str, current_user: dict = Depends(get_curr
         .select("comment_recipient_id") \
         .eq("comment_id", comment_id) \
         .eq("user_id", current_user["user_id"]) \
-        .maybe_single() \
+        .limit(1) \
         .execute()
 
-    if not is_author and not is_recipient.data:
+    if not is_author and not (is_recipient and is_recipient.data):
         raise HTTPException(status_code=403, detail="Not authorized to resolve this comment")
 
     result = supabase.table("comments").update({

@@ -55,7 +55,43 @@ async def get_video_comments(video_id: str, current_user: dict = Depends(get_cur
         .eq("video_id", video_id) \
         .order("video_timestamp_seconds") \
         .execute()
-    return result.data or []
+    comments = result.data or []
+    if not comments:
+        return []
+
+    # Enrich with target labels so the frontend can display them without extra fetches
+    comment_ids = [c["comment_id"] for c in comments]
+    targets_res = supabase.table("comment_targets") \
+        .select("comment_id, user_id, subgroup_id, team_id") \
+        .in_("comment_id", comment_ids) \
+        .execute()
+    target_map = {t["comment_id"]: t for t in (targets_res.data or [])}
+
+    user_ids = [t["user_id"] for t in (targets_res.data or []) if t.get("user_id")]
+    users_map: dict = {}
+    if user_ids:
+        rows = supabase.table("users").select("user_id, full_name").in_("user_id", user_ids).execute()
+        users_map = {u["user_id"]: u["full_name"] for u in (rows.data or [])}
+
+    subgroup_ids = [t["subgroup_id"] for t in (targets_res.data or []) if t.get("subgroup_id")]
+    subgroups_map: dict = {}
+    if subgroup_ids:
+        rows = supabase.table("subgroups").select("subgroup_id, name").in_("subgroup_id", subgroup_ids).execute()
+        subgroups_map = {s["subgroup_id"]: s["name"] for s in (rows.data or [])}
+
+    for c in comments:
+        t = target_map.get(c["comment_id"], {})
+        if c["target_type"] == "individual" and t.get("user_id"):
+            c["target_label"] = users_map.get(t["user_id"], "Unknown")
+            c["target_id"] = t["user_id"]
+        elif c["target_type"] == "subgroup" and t.get("subgroup_id"):
+            c["target_label"] = subgroups_map.get(t["subgroup_id"], "Unknown subgroup")
+            c["target_id"] = t["subgroup_id"]
+        else:
+            c["target_label"] = "Whole team"
+            c["target_id"] = t.get("team_id", "")
+
+    return comments
 
 
 @router.get("/{video_id}/comments/my")

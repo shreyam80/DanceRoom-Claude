@@ -8,6 +8,7 @@ import OrganizationNewPage from './pages/OrganizationNewPage'
 import OrganizationPage from './pages/OrganizationPage'
 import TeamPage from './pages/TeamPage'
 import RoutinePage from './pages/RoutinePage'
+import VideoReviewPage from './pages/VideoReviewPage'
 
 export default function App() {
   return (
@@ -37,7 +38,7 @@ export default function App() {
 
           {/* Placeholder routes — filled in Phase 6–7 */}
           <Route path="/videos/:videoId/review" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">Review — coming in Phase 6</div></ProtectedRoute>
+            <ProtectedRoute><VideoReviewPage /></ProtectedRoute>
           } />
           <Route path="/videos/:videoId/watch" element={
             <ProtectedRoute><div className="p-8 text-gray-500">Watch — coming in Phase 7</div></ProtectedRoute>
