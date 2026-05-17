@@ -1,0 +1,36 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+*.pyc
+*.pyo
+.Python
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
