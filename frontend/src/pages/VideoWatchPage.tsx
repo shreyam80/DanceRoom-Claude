@@ -40,6 +40,7 @@ export default function VideoWatchPage() {
   const [duration, setDuration] = useState(0)
   const [activeComment, setActiveComment] = useState<Comment | null>(null)
   const [acknowledging, setAcknowledging] = useState(false)
+  const [resolving, setResolving] = useState<string | null>(null)
 
   // Tracks acknowledged comment IDs in memory so scrubbing back never re-triggers them
   const acknowledgedIds = useRef<Set<string>>(new Set())
@@ -96,6 +97,18 @@ export default function VideoWatchPage() {
       videoRef.current?.play()
     } finally {
       setAcknowledging(false)
+    }
+  }
+
+  async function handleResolve(commentId: string) {
+    setResolving(commentId)
+    try {
+      await api.post(`/comments/${commentId}/resolve`)
+      setComments(prev => prev.map(c =>
+        c.comment_id === commentId ? { ...c, status: 'resolved' as const } : c
+      ))
+    } finally {
+      setResolving(null)
     }
   }
 
@@ -220,9 +233,21 @@ export default function VideoWatchPage() {
                         <span className="text-xs text-yellow-500">pending</span>
                       )}
                     </div>
-                    <p className={`text-sm leading-snug ${acked ? 'text-gray-500' : 'text-gray-100'}`}>
+                    <p className={`text-sm leading-snug mb-2 ${acked ? 'text-gray-500' : 'text-gray-100'}`}>
                       {c.body}
                     </p>
+                    {c.status === 'open' && (
+                      <button
+                        onClick={() => handleResolve(c.comment_id)}
+                        disabled={resolving === c.comment_id}
+                        className="text-xs text-gray-400 hover:text-white border border-gray-600 hover:border-gray-400 px-2 py-0.5 rounded disabled:opacity-50 transition-colors"
+                      >
+                        {resolving === c.comment_id ? 'Resolving…' : 'Resolve'}
+                      </button>
+                    )}
+                    {c.status === 'resolved' && (
+                      <span className="text-xs text-gray-600">resolved</span>
+                    )}
                   </div>
                 )
               })
