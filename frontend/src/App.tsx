@@ -9,6 +9,7 @@ import OrganizationPage from './pages/OrganizationPage'
 import TeamPage from './pages/TeamPage'
 import RoutinePage from './pages/RoutinePage'
 import VideoReviewPage from './pages/VideoReviewPage'
+import VideoWatchPage from './pages/VideoWatchPage'
 
 export default function App() {
   return (
@@ -41,7 +42,7 @@ export default function App() {
             <ProtectedRoute><VideoReviewPage /></ProtectedRoute>
           } />
           <Route path="/videos/:videoId/watch" element={
-            <ProtectedRoute><div className="p-8 text-gray-500">Watch — coming in Phase 7</div></ProtectedRoute>
+            <ProtectedRoute><VideoWatchPage /></ProtectedRoute>
           } />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
