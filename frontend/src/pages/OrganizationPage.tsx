@@ -161,6 +161,17 @@ export default function OrganizationPage() {
             ))}
           </div>
         )}
+
+        {profile?.role === 'choreographer' && (
+          <div className="mt-6">
+            <button
+              onClick={() => navigate(`/organizations/${organizationId}/archived`)}
+              className="text-sm text-gray-400 hover:text-gray-600"
+            >
+              View archived teams →
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )

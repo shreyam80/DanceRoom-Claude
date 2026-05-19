@@ -42,8 +42,12 @@ export default function VideoWatchPage() {
   const [acknowledging, setAcknowledging] = useState(false)
   const [resolving, setResolving] = useState<string | null>(null)
 
-  // Tracks acknowledged comment IDs in memory so scrubbing back never re-triggers them
+  // Only acknowledged comments (server-confirmed) are permanently skipped
   const acknowledgedIds = useRef<Set<string>>(new Set())
+  // Tracks a single skipped comment; cleared once video moves 2s past that timestamp
+  const skippedRef = useRef<{ id: string; time: number } | null>(null)
+  // Prevent duplicate /viewed calls per session
+  const viewedRef = useRef(false)
 
   useEffect(() => {
     if (!videoId) return
@@ -68,10 +72,16 @@ export default function VideoWatchPage() {
     const time = e.currentTarget.currentTime
     setCurrentTime(time)
 
-    // Find the first unacknowledged comment within 0.5s of current position
+    // Clear the skip cooldown once the video has moved 2s past the skipped timestamp
+    if (skippedRef.current && Math.abs(time - skippedRef.current.time) > 2.0) {
+      skippedRef.current = null
+    }
+
+    // Find the first unacknowledged, non-cooling-down comment within 0.5s
     const hit = comments.find(
       c =>
         !acknowledgedIds.current.has(c.comment_id) &&
+        skippedRef.current?.id !== c.comment_id &&
         Math.abs(time - c.video_timestamp_seconds) < 0.5
     )
     if (hit && !activeComment) {
@@ -113,8 +123,11 @@ export default function VideoWatchPage() {
   }
 
   function handleDismiss() {
-    // Mark in-memory only — skip without acknowledging (e.g. to re-read later)
-    if (activeComment) acknowledgedIds.current.add(activeComment.comment_id)
+    // Set a cooldown so the modal doesn't immediately re-fire as the video resumes;
+    // once the video moves 2s past this timestamp, the comment will trigger again.
+    if (activeComment) {
+      skippedRef.current = { id: activeComment.comment_id, time: activeComment.video_timestamp_seconds }
+    }
     setActiveComment(null)
     videoRef.current?.play()
   }
@@ -163,6 +176,12 @@ export default function VideoWatchPage() {
             className="w-full rounded-lg bg-black"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={e => setDuration((e.target as HTMLVideoElement).duration)}
+            onPlay={() => {
+              if (!viewedRef.current && videoId) {
+                viewedRef.current = true
+                api.post(`/videos/${videoId}/viewed`).catch(() => {})
+              }
+            }}
           />
 
           <div className="bg-gray-800 rounded-xl p-4">

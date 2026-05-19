@@ -13,6 +13,7 @@ interface Team {
   team_id: string
   name: string
   description: string | null
+  unread_comment_count?: number
 }
 
 export default function Dashboard() {
@@ -20,6 +21,8 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [teams, setTeams] = useState<Team[]>([])
+  const [archivedTeams, setArchivedTeams] = useState<Team[]>([])
+  const [showArchivedTeams, setShowArchivedTeams] = useState(false)
   const [loadingData, setLoadingData] = useState(false)
 
   useEffect(() => {
@@ -28,7 +31,13 @@ export default function Dashboard() {
     if (profile.role === 'choreographer') {
       api.get('/organizations').then(r => setOrgs(r.data)).finally(() => setLoadingData(false))
     } else {
-      api.get('/teams').then(r => setTeams(r.data)).finally(() => setLoadingData(false))
+      Promise.all([
+        api.get('/teams'),
+        api.get('/teams?archived=true'),
+      ]).then(([activeRes, archivedRes]) => {
+        setTeams(activeRes.data)
+        setArchivedTeams(archivedRes.data)
+      }).finally(() => setLoadingData(false))
     }
   }, [profile])
 
@@ -116,7 +125,7 @@ export default function Dashboard() {
         {profile.role === 'dancer' && (
           loadingData ? (
             <p className="text-gray-400 text-sm">Loading…</p>
-          ) : teams.length === 0 ? (
+          ) : teams.length === 0 && archivedTeams.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
               <p className="text-gray-500 text-sm">
                 No teams yet. Ask your choreographer to add you using your email:{' '}
@@ -124,18 +133,55 @@ export default function Dashboard() {
               </p>
             </div>
           ) : (
-            <div className="grid gap-3">
-              {teams.map(team => (
-                <button
-                  key={team.team_id}
-                  onClick={() => navigate(`/teams/${team.team_id}`)}
-                  className="bg-white border border-gray-200 hover:border-brand-300 rounded-xl p-5 text-left transition-colors"
-                >
-                  <div className="font-medium text-gray-900">{team.name}</div>
-                  {team.description && <div className="text-sm text-gray-500 mt-0.5">{team.description}</div>}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="grid gap-3">
+                {teams.map(team => (
+                  <button
+                    key={team.team_id}
+                    onClick={() => navigate(`/teams/${team.team_id}`)}
+                    className="bg-white border border-gray-200 hover:border-brand-300 rounded-xl p-5 text-left transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">{team.name}</span>
+                      {(team.unread_comment_count ?? 0) > 0 && (
+                        <span className="text-xs bg-brand-600 text-white px-2 py-0.5 rounded-full font-medium">
+                          {team.unread_comment_count} new
+                        </span>
+                      )}
+                    </div>
+                    {team.description && <div className="text-sm text-gray-500 mt-0.5">{team.description}</div>}
+                  </button>
+                ))}
+              </div>
+
+              {archivedTeams.length > 0 && (
+                <div className="mt-6">
+                  <button
+                    onClick={() => setShowArchivedTeams(v => !v)}
+                    className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                  >
+                    {showArchivedTeams ? '▲' : '▼'} Archived teams ({archivedTeams.length})
+                  </button>
+                  {showArchivedTeams && (
+                    <div className="grid gap-3 mt-2">
+                      {archivedTeams.map(team => (
+                        <button
+                          key={team.team_id}
+                          onClick={() => navigate(`/teams/${team.team_id}`)}
+                          className="bg-white border border-gray-200 hover:border-brand-300 rounded-xl p-5 text-left transition-colors opacity-60"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{team.name}</span>
+                            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Archived</span>
+                          </div>
+                          {team.description && <div className="text-sm text-gray-500 mt-0.5">{team.description}</div>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )
         )}
       </main>

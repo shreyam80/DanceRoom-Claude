@@ -57,6 +57,6 @@ async def get_organization(organization_id: str, current_user: dict = Depends(ge
     if not org or not org.data:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    teams = supabase.table("teams").select("*").eq("organization_id", organization_id).execute()
+    teams = supabase.table("teams").select("*").eq("organization_id", organization_id).is_("archived_at", "null").execute()
 
     return {**org.data, "teams": teams.data or []}

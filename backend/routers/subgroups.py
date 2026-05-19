@@ -1,9 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException
 from database import supabase
 from auth import get_current_user
-from models.schemas import SubgroupCreate, AddSubgroupMember
+from models.schemas import SubgroupCreate, AddSubgroupMember, SubgroupUpdate
 
 router = APIRouter(prefix="/subgroups", tags=["subgroups"])
+
+
+def _assert_choreographer_on_subgroup_team(subgroup_id: str, user_id: str) -> str:
+    """Returns team_id after verifying caller is a choreographer on that team."""
+    sg = supabase.table("subgroups").select("team_id").eq("subgroup_id", subgroup_id).maybe_single().execute()
+    if not sg or not sg.data:
+        raise HTTPException(status_code=404, detail="Subgroup not found")
+
+    team_id = sg.data["team_id"]
+    membership = supabase.table("team_members") \
+        .select("team_member_id") \
+        .eq("team_id", team_id) \
+        .eq("user_id", user_id) \
+        .eq("role", "choreographer") \
+        .limit(1) \
+        .execute()
+    if not membership or not membership.data:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return team_id
 
 
 @router.post("")
@@ -19,6 +38,49 @@ async def create_subgroup(body: SubgroupCreate, current_user: dict = Depends(get
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create subgroup")
     return result.data[0]
+
+
+@router.patch("/{subgroup_id}")
+async def rename_subgroup(subgroup_id: str, body: SubgroupUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "choreographer":
+        raise HTTPException(status_code=403, detail="Only choreographers can edit subgroups")
+
+    _assert_choreographer_on_subgroup_team(subgroup_id, current_user["user_id"])
+
+    result = supabase.table("subgroups") \
+        .update({"name": body.name}) \
+        .eq("subgroup_id", subgroup_id) \
+        .execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update subgroup")
+    return result.data[0]
+
+
+@router.delete("/{subgroup_id}")
+async def delete_subgroup(subgroup_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "choreographer":
+        raise HTTPException(status_code=403, detail="Only choreographers can delete subgroups")
+
+    _assert_choreographer_on_subgroup_team(subgroup_id, current_user["user_id"])
+
+    # Hard delete — cascades to subgroup_members
+    supabase.table("subgroups").delete().eq("subgroup_id", subgroup_id).execute()
+    return {"ok": True}
+
+
+@router.delete("/{subgroup_id}/members/{user_id}")
+async def remove_subgroup_member(subgroup_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "choreographer":
+        raise HTTPException(status_code=403, detail="Only choreographers can manage subgroup members")
+
+    _assert_choreographer_on_subgroup_team(subgroup_id, current_user["user_id"])
+
+    supabase.table("subgroup_members") \
+        .delete() \
+        .eq("subgroup_id", subgroup_id) \
+        .eq("user_id", user_id) \
+        .execute()
+    return {"ok": True}
 
 
 @router.get("/{subgroup_id}")

@@ -10,6 +10,7 @@ import TeamPage from './pages/TeamPage'
 import RoutinePage from './pages/RoutinePage'
 import VideoReviewPage from './pages/VideoReviewPage'
 import VideoWatchPage from './pages/VideoWatchPage'
+import ArchivedTeamsPage from './pages/ArchivedTeamsPage'
 
 export default function App() {
   return (
@@ -28,6 +29,9 @@ export default function App() {
           } />
           <Route path="/organizations/:organizationId" element={
             <ProtectedRoute><OrganizationPage /></ProtectedRoute>
+          } />
+          <Route path="/organizations/:organizationId/archived" element={
+            <ProtectedRoute><ArchivedTeamsPage /></ProtectedRoute>
           } />
           <Route path="/teams/:teamId" element={
             <ProtectedRoute><TeamPage /></ProtectedRoute>

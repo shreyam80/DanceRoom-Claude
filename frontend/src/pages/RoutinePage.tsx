@@ -10,14 +10,22 @@ interface Video {
   file_url: string
   duration_seconds: number | null
   uploaded_at: string
+  is_watched: boolean
 }
 
 interface Routine {
   routine_id: string
   title: string
   team_id: string
+  archived_at: string | null
   videos: Video[]
 }
+
+type ConfirmState =
+  | { type: 'delete-video'; videoId: string }
+  | { type: 'archive-routine' }
+  | { type: 'delete-routine' }
+  | null
 
 export default function RoutinePage() {
   const { routineId } = useParams<{ routineId: string }>()
@@ -31,6 +39,9 @@ export default function RoutinePage() {
   const [uploadProgress, setUploadProgress] = useState('')
   const [uploadError, setUploadError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [acting, setActing] = useState(false)
 
   useEffect(() => {
     if (!routineId) return
@@ -90,6 +101,41 @@ export default function RoutinePage() {
     }
   }
 
+  async function handleDeleteVideo(videoId: string) {
+    setActing(true)
+    try {
+      await api.delete(`/videos/${videoId}`)
+      setRoutine(prev => prev ? { ...prev, videos: prev.videos.filter(v => v.video_id !== videoId) } : prev)
+    } finally {
+      setActing(false)
+      setConfirm(null)
+    }
+  }
+
+  async function handleArchiveRoutine() {
+    if (!routineId) return
+    setActing(true)
+    try {
+      await api.patch(`/routines/${routineId}`, { archived: true })
+      navigate(-1)
+    } finally {
+      setActing(false)
+      setConfirm(null)
+    }
+  }
+
+  async function handleDeleteRoutine() {
+    if (!routineId) return
+    setActing(true)
+    try {
+      await api.delete(`/routines/${routineId}`)
+      navigate(-1)
+    } finally {
+      setActing(false)
+      setConfirm(null)
+    }
+  }
+
   const isChoreographer = profile?.role === 'choreographer'
 
   if (loading) {
@@ -106,6 +152,9 @@ export default function RoutinePage() {
           <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-gray-700 text-sm">← Back</button>
           <span className="text-gray-300">/</span>
           <span className="text-sm text-gray-700 font-medium">{routine.title}</span>
+          {routine.archived_at && (
+            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">Archived</span>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-600">{profile?.full_name}</span>
@@ -116,27 +165,41 @@ export default function RoutinePage() {
       <main className="max-w-4xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-semibold text-gray-900">{routine.title}</h1>
-          {isChoreographer && (
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/*,.mov"
-                className="hidden"
-                onChange={e => {
-                  const file = e.target.files?.[0]
-                  if (file) handleUpload(file)
-                }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
-              >
-                {uploading ? uploadProgress : '+ Upload video'}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {isChoreographer && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*,.mov"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUpload(file)
+                  }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  {uploading ? uploadProgress : '+ Upload video'}
+                </button>
+                <button
+                  onClick={() => setConfirm({ type: 'archive-routine' })}
+                  className="border border-gray-300 hover:bg-gray-50 text-gray-600 px-3 py-2 rounded-lg text-sm font-medium"
+                >
+                  Archive
+                </button>
+                <button
+                  onClick={() => setConfirm({ type: 'delete-routine' })}
+                  className="border border-red-200 hover:bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-medium"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {uploadError && (
@@ -156,20 +219,31 @@ export default function RoutinePage() {
                 key={v.video_id}
                 className="bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-between"
               >
-                <div>
+                <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-gray-900">Version {v.version_number}</span>
-                  <span className="ml-3 text-xs text-gray-400">
+                  <span className="text-xs text-gray-400">
                     {new Date(v.uploaded_at).toLocaleDateString()}
                   </span>
+                  {!isChoreographer && !v.is_watched && (
+                    <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">New</span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   {isChoreographer && (
-                    <button
-                      onClick={() => navigate(`/videos/${v.video_id}/review`)}
-                      className="text-sm bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg font-medium"
-                    >
-                      Review
-                    </button>
+                    <>
+                      <button
+                        onClick={() => navigate(`/videos/${v.video_id}/review`)}
+                        className="text-sm bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg font-medium"
+                      >
+                        Review
+                      </button>
+                      <button
+                        onClick={() => setConfirm({ type: 'delete-video', videoId: v.video_id })}
+                        className="text-sm border border-red-200 hover:bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-medium"
+                      >
+                        Delete
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => navigate(`/videos/${v.video_id}/watch`)}
@@ -183,6 +257,50 @@ export default function RoutinePage() {
           </div>
         )}
       </main>
+
+      {/* Confirmation modal */}
+      {confirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            {confirm.type === 'delete-video' && (
+              <>
+                <h2 className="text-base font-semibold text-gray-900 mb-2">Delete this video?</h2>
+                <p className="text-sm text-gray-500 mb-5">All feedback on this video will also be permanently deleted. This cannot be undone.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirm(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+                  <button onClick={() => handleDeleteVideo(confirm.videoId)} disabled={acting} className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium">
+                    {acting ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </>
+            )}
+            {confirm.type === 'archive-routine' && (
+              <>
+                <h2 className="text-base font-semibold text-gray-900 mb-2">Archive this routine?</h2>
+                <p className="text-sm text-gray-500 mb-5">The routine will be moved to the archived section. You can unarchive it later.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirm(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleArchiveRoutine} disabled={acting} className="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium">
+                    {acting ? 'Archiving…' : 'Archive'}
+                  </button>
+                </div>
+              </>
+            )}
+            {confirm.type === 'delete-routine' && (
+              <>
+                <h2 className="text-base font-semibold text-gray-900 mb-2">Delete this routine?</h2>
+                <p className="text-sm text-gray-500 mb-5">All videos and feedback for this routine will be permanently deleted. This cannot be undone.</p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirm(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleDeleteRoutine} disabled={acting} className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium">
+                    {acting ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

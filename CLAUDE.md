@@ -81,13 +81,13 @@ DanceRoom-Claude/
 │   └── routers/
 │       ├── users.py         # POST /users, GET /users/me
 │       ├── organizations.py # POST /organizations, GET /organizations, GET /organizations/{id}
-│       ├── teams.py         # GET /teams, POST /teams, GET /teams/{id}, POST /teams/{id}/members, GET /teams/{id}/subgroups
-│       ├── subgroups.py     # POST /subgroups, GET /subgroups/{id}, POST /subgroups/{id}/members
-│       ├── routines.py      # POST /routines, GET /routines/{id}
-│       ├── videos.py        # POST /videos, GET /videos/{id}, GET /videos/{id}/comments, GET /videos/{id}/comments/my
+│       ├── teams.py         # Full CRUD: GET/POST/PATCH/DELETE teams, members, subgroups
+│       ├── subgroups.py     # GET/POST/PATCH/DELETE subgroups + members
+│       ├── routines.py      # GET/POST/PATCH/DELETE routines (with archive support)
+│       ├── videos.py        # GET/POST/DELETE videos, POST /viewed, GET comments
 │       └── comments.py      # POST /comments, POST /comments/{id}/acknowledge, POST /comments/{id}/resolve
 ├── frontend/src/
-│   ├── App.tsx              # All routes wired up
+│   ├── App.tsx              # All routes wired up (includes /organizations/:id/archived)
 │   ├── lib/
 │   │   ├── supabase.ts      # Supabase JS client (anon key)
 │   │   └── api.ts           # Axios instance with Bearer token interceptor
@@ -99,40 +99,73 @@ DanceRoom-Claude/
 │   └── pages/
 │       ├── Login.tsx
 │       ├── Signup.tsx
-│       ├── Dashboard.tsx            # Org list (choreographer) or team list (dancer)
+│       ├── Dashboard.tsx            # Orgs (choreographer) or teams (dancer) with unread badges + archived section
 │       ├── OrganizationNewPage.tsx  # Create org form
-│       ├── OrganizationPage.tsx     # Org detail + team list + create team
-│       ├── TeamPage.tsx             # Team detail + members + subgroups + routines
-│       ├── RoutinePage.tsx          # Routine detail + video list + upload
+│       ├── OrganizationPage.tsx     # Org detail + team list + "View archived teams" link
+│       ├── ArchivedTeamsPage.tsx    # /organizations/:id/archived — archived teams with unarchive
+│       ├── TeamPage.tsx             # Team detail + members (remove) + subgroups (edit/delete) + routines + archive/delete team
+│       ├── RoutinePage.tsx          # Routine detail + video list + upload + delete video + archive/delete routine
 │       ├── VideoReviewPage.tsx      # Choreographer: video player + timeline + feedback sidebar
 │       └── VideoWatchPage.tsx       # Dancer: video player + auto-pause modal + acknowledge
 └── supabase/
     └── migrations/
         ├── 001_create_tables.sql        # All 12 tables + handle_new_user trigger
         ├── 001b_patch_existing_users.sql # Adds role/username/full_name to pre-existing users table
-        └── 002_rls_policies.sql         # RLS policies for all tables
+        ├── 002_rls_policies.sql         # RLS policies for all tables
+        └── 003_archive_and_views.sql    # archived_at on routines/teams + video_views table
 ```
 
 ---
 
-## Database Schema (12 tables)
+## Database Schema (13 tables)
 
 ```
 users                  — mirrors auth.users, adds role/username/full_name
 organizations          — created by choreographers
 organization_memberships — user ↔ org (role: admin/member, status: active)
-teams                  — belong to an org
+teams                  — belong to an org; has archived_at TIMESTAMPTZ (NULL = active)
 team_members           — user ↔ team (role: choreographer/dancer, status: active)
 subgroups              — sub-grouping within a team
 subgroup_members       — user ↔ subgroup
-routines               — belong to a team
+routines               — belong to a team; has archived_at TIMESTAMPTZ (NULL = active)
 videos                 — belong to a routine, have file_url + storage_path + version_number
+video_views            — one row per (user_id, video_id) once first played; tracks watched status
 comments               — on a video, with video_timestamp_seconds and target_type (individual/subgroup/team)
 comment_targets        — one row per comment, records the specific target (user_id / subgroup_id / team_id)
 comment_recipients     — expanded per-dancer rows; tracks acknowledged_at and status
 ```
 
 **Important:** `organizations.type` has a NOT NULL constraint in the DB (even though the migration says nullable). Always send `body.type or ""` — never send null.
+
+---
+
+## API Surface (round 2 additions)
+
+### Videos
+- `DELETE /videos/{id}` — choreographer only; deletes from DB + Supabase Storage
+- `POST /videos/{id}/viewed` — upsert into video_views; called on first play in VideoWatchPage
+
+### Routines
+- `PATCH /routines/{id}` — `{ archived: bool }` — archive/unarchive
+- `DELETE /routines/{id}` — hard delete (cascades to videos, comments)
+
+### Teams
+- `PATCH /teams/{id}` — `{ archived: bool }` — archive/unarchive
+- `DELETE /teams/{id}` — hard delete (cascades everything)
+- `DELETE /teams/{id}/members/{user_id}` — remove dancer (comments preserved)
+- `GET /teams?archived=true` — returns archived teams the user is a member of (both roles)
+- `GET /teams?organization_id=X&archived=true` — choreographer: archived teams for a specific org
+
+### Subgroups
+- `PATCH /subgroups/{id}` — `{ name: str }` — rename
+- `DELETE /subgroups/{id}` — hard delete (cascades members)
+- `DELETE /subgroups/{id}/members/{user_id}` — remove member from subgroup
+
+### Enriched GET responses
+- `GET /teams` — dancer callers get `unread_comment_count` per team
+- `GET /teams/{id}` — routines include `unread_comment_count` + `has_unwatched_video`; also returns `archived_routines` array
+- `GET /routines/{id}` — videos include `is_watched: bool` (checked against video_views)
+- `GET /organizations/{id}` — teams list filters out archived teams
 
 ---
 
@@ -212,6 +245,9 @@ The `organizations` table has `type TEXT NOT NULL` in the DB. The backend always
 ### 5. Supabase email confirmation
 Email confirmation must be **disabled** in Supabase Dashboard → Authentication → Providers → Email → "Confirm email" toggle OFF. Otherwise signup returns "Email not confirmed" error.
 
+### 6. Do NOT add `crossOrigin="anonymous"` to video elements
+Adding this attribute causes CORS preflight checks against Supabase Storage. When the preflight interaction silently fails, the browser blocks the audio track while still rendering video frames — resulting in a greyed-out volume button. The video elements must load without CORS mode (no `crossOrigin` attribute).
+
 ---
 
 ## Comment System
@@ -233,19 +269,35 @@ Returns only comments where the caller has a `comment_recipients` row. Includes 
 ### Acknowledge flow
 `POST /comments/{id}/acknowledge` → sets `acknowledged_at` and `status = 'acknowledged'` on the `comment_recipients` row.
 
-### Dancer auto-pause invariant
-The `acknowledgedIds` ref (a `Set<string>`) is pre-populated on load from comments where `acknowledged_at` is non-null. Once in the set, a comment never triggers again — even if the dancer scrubs back past that timestamp.
+### Dancer auto-pause behavior (VideoWatchPage.tsx)
+- `acknowledgedIds` ref (Set<string>) — pre-populated on load from server-confirmed `acknowledged_at`. Only grows via `handleAcknowledge()`. Never modified by "Skip".
+- `skippedRef` — holds `{ id, time }` for the most recently skipped comment. Cleared once the video moves more than 2 seconds past that timestamp.
+- Trigger condition: `!acknowledgedIds.has(id) && skippedRef?.id !== id && |time - timestamp| < 0.5`
+- "Skip for now" sets `skippedRef` (not `acknowledgedIds`) — so the modal re-fires on the next pass through that timestamp.
+- "Acknowledge" calls the API, adds to `acknowledgedIds`, and resumes playback.
 
-```typescript
-const hit = comments.find(
-  c => !acknowledgedIds.current.has(c.comment_id) &&
-       Math.abs(time - c.video_timestamp_seconds) < 0.5
-)
-if (hit && !activeComment) {
-  videoRef.current.pause()
-  setActiveComment(hit)
-}
-```
+---
+
+## Archive System
+
+- Both `teams` and `routines` have an `archived_at TIMESTAMPTZ` column (NULL = active).
+- Choreographers can archive/unarchive via PATCH with `{ archived: bool }`.
+- `GET /teams` and `GET /organizations/{id}` filter out archived items by default.
+- Archived routines are returned in a separate `archived_routines` array from `GET /teams/{id}`.
+- Dancers can see archived teams (collapsible section on Dashboard) and archived routines (collapsible section on TeamPage) — read-only view, no unarchive button.
+- Choreographers see the same sections with an "Unarchive" button.
+- Archived teams page for choreographers: `/organizations/:id/archived` (ArchivedTeamsPage.tsx).
+
+---
+
+## Notification / Unread System
+
+- Unread comment count per team is added to `GET /teams` for dancer callers by joining `comment_recipients` where `acknowledged_at IS NULL`.
+- Unread comment count and `has_unwatched_video` per routine are added to `GET /teams/{id}`.
+- `video_views` table records first-play events. `GET /routines/{id}` enriches each video with `is_watched`.
+- Frontend badge: purple "X new" on team cards (Dashboard) and routine cards (TeamPage).
+- Frontend badge: "New" pill on video cards (RoutinePage) when `!is_watched` and user is dancer.
+- View is recorded in VideoWatchPage `onPlay` handler via `POST /videos/{id}/viewed`.
 
 ---
 
@@ -255,32 +307,15 @@ Primary color: `brand-600` = `#7c3aed` (purple). Scale: `brand-50` through `bran
 
 ---
 
-## Git History (all commits on `main`)
-
-```
-fdb094a feat: resolve comments for choreographers and dancers
-78f9ce5 feat: dancer watch page — filtered comments, auto-pause on timestamp, acknowledge
-9e35bb8 feat: choreographer review page — video player, timeline markers, feedback modal, sidebar
-d86419d feat: routines and video upload to supabase storage (public bucket)
-8ff16e4 feat: orgs, teams, subgroups — create and add members
-611f232 fix: explicitly create profile on signup; recover missing profile on login
-951c380 feat: auth — login, signup with role, protected routes, dashboard landing
-5322a0e feat: fastapi backend — supabase client, auth middleware, all routes
-04bdbeb fix: patch pre-existing users table to add role, username, full_name columns
-e476863 feat: supabase SQL migrations for all tables and RLS policies
-4d1b9d6 feat: initial project scaffold
-```
-
----
-
 ## What Is NOT Done (potential next steps)
 
 - **Deployment** — not deployed anywhere yet; runs fully local
+- **Video audio** — volume button is greyed out in the browser; root cause is under investigation. Suspected to be a Supabase Storage Content-Type or CORS header issue affecting how the browser decodes the audio track. Do NOT add `crossOrigin="anonymous"` (see Critical Bugs #6).
 - **Video duration** — `duration_seconds` is saved as `null`; the frontend doesn't extract it from the video element before uploading
 - **Version numbering** — currently counts existing videos for the routine and increments; this could race if two uploads happen simultaneously
 - **Dancer subgroup visibility** — dancers see all subgroups on the team page, not just their own
 - **Email notifications** — no notifications when feedback is added
 - **Mobile responsiveness** — built desktop-first; review/watch pages have a fixed 320px sidebar that breaks on small screens
 - **Video format support** — `.mov` files work but may not play in all browsers (codec dependent); no transcoding
-- **Delete / edit** — no way to delete orgs, teams, routines, videos, or comments
+- **Delete orgs** — no way to delete organizations
 - **Pagination** — no limits on any list queries

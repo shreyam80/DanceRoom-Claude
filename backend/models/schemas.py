@@ -58,6 +58,18 @@ class VideoCreate(BaseModel):
     duration_seconds: Optional[float] = None
 
 
+# ─── Archive toggle (routines and teams) ───────────────────────────────────────
+
+class ArchiveToggle(BaseModel):
+    archived: bool
+
+
+# ─── Subgroup update ────────────────────────────────────────────────────────────
+
+class SubgroupUpdate(BaseModel):
+    name: str
+
+
 # ─── Comments ──────────────────────────────────────────────────────────────────
 
 class CommentCreate(BaseModel):

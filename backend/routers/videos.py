@@ -33,6 +33,56 @@ async def create_video(body: VideoCreate, current_user: dict = Depends(get_curre
     return result.data[0]
 
 
+@router.delete("/{video_id}")
+async def delete_video(video_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "choreographer":
+        raise HTTPException(status_code=403, detail="Only choreographers can delete videos")
+
+    video = supabase.table("videos").select("*").eq("video_id", video_id).maybe_single().execute()
+    if not video or not video.data:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Verify caller is a choreographer on this video's team
+    routine = supabase.table("routines") \
+        .select("team_id") \
+        .eq("routine_id", video.data["routine_id"]) \
+        .maybe_single() \
+        .execute()
+    if not routine or not routine.data:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    membership = supabase.table("team_members") \
+        .select("team_member_id") \
+        .eq("team_id", routine.data["team_id"]) \
+        .eq("user_id", current_user["user_id"]) \
+        .eq("role", "choreographer") \
+        .limit(1) \
+        .execute()
+    if not membership or not membership.data:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this video")
+
+    # Delete from Supabase Storage
+    if video.data.get("storage_path"):
+        try:
+            supabase.storage.from_("rehearsal-videos").remove([video.data["storage_path"]])
+        except Exception:
+            pass  # Continue even if storage delete fails; DB row is the source of truth
+
+    # Delete from DB (cascades to comments, comment_targets, comment_recipients)
+    supabase.table("videos").delete().eq("video_id", video_id).execute()
+    return {"ok": True}
+
+
+@router.post("/{video_id}/viewed")
+async def mark_video_viewed(video_id: str, current_user: dict = Depends(get_current_user)):
+    # Upsert: ignore conflict if already viewed
+    supabase.table("video_views").upsert(
+        {"video_id": video_id, "user_id": current_user["user_id"]},
+        on_conflict="video_id,user_id",
+    ).execute()
+    return {"ok": True}
+
+
 @router.get("/{video_id}")
 async def get_video(video_id: str, current_user: dict = Depends(get_current_user)):
     result = supabase.table("videos").select("*").eq("video_id", video_id).maybe_single().execute()
