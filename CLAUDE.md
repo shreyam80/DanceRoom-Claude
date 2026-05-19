@@ -246,7 +246,7 @@ The `organizations` table has `type TEXT NOT NULL` in the DB. The backend always
 Email confirmation must be **disabled** in Supabase Dashboard → Authentication → Providers → Email → "Confirm email" toggle OFF. Otherwise signup returns "Email not confirmed" error.
 
 ### 6. Do NOT add `crossOrigin="anonymous"` to video elements
-Adding this attribute causes CORS preflight checks against Supabase Storage. When the preflight interaction silently fails, the browser blocks the audio track while still rendering video frames — resulting in a greyed-out volume button. The video elements must load without CORS mode (no `crossOrigin` attribute).
+Adding this attribute causes CORS preflight checks against Supabase Storage. When the preflight interaction silently fails, the browser blocks the audio track while still rendering video frames — resulting in a greyed-out volume button. The video elements must load without CORS mode (no `crossOrigin` attribute). Note: the greyed-out volume seen during development was a VSCode preview artifact — audio works correctly in the actual browser.
 
 ---
 
@@ -310,7 +310,7 @@ Primary color: `brand-600` = `#7c3aed` (purple). Scale: `brand-50` through `bran
 ## What Is NOT Done (potential next steps)
 
 - **Deployment** — not deployed anywhere yet; runs fully local
-- **Video audio** — volume button is greyed out in the browser; root cause is under investigation. Suspected to be a Supabase Storage Content-Type or CORS header issue affecting how the browser decodes the audio track. Do NOT add `crossOrigin="anonymous"` (see Critical Bugs #6).
+- **Video audio** — works correctly in the browser. The greyed-out volume button observed earlier was a VSCode preview artifact, not an app issue. Do NOT add `crossOrigin="anonymous"` to video elements (see Critical Bugs #6).
 - **Video duration** — `duration_seconds` is saved as `null`; the frontend doesn't extract it from the video element before uploading
 - **Version numbering** — currently counts existing videos for the routine and increments; this could race if two uploads happen simultaneously
 - **Dancer subgroup visibility** — dancers see all subgroups on the team page, not just their own

@@ -169,11 +169,12 @@ export default function VideoWatchPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: video + timeline */}
         <div className="flex-1 flex flex-col p-6 gap-4 min-w-0 overflow-y-auto">
-          <video
+          <div className="flex justify-center items-center bg-black rounded-lg overflow-hidden">
+            <video
             ref={videoRef}
             src={video.file_url}
             controls
-            className="w-full rounded-lg bg-black"
+            className="max-h-[70vh] max-w-full"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={e => setDuration((e.target as HTMLVideoElement).duration)}
             onPlay={() => {
@@ -183,6 +184,7 @@ export default function VideoWatchPage() {
               }
             }}
           />
+          </div>
 
           <div className="bg-gray-800 rounded-xl p-4">
             <div

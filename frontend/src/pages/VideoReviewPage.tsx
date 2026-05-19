@@ -137,14 +137,16 @@ export default function VideoReviewPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: video + timeline */}
         <div className="flex-1 flex flex-col p-6 gap-4 min-w-0 overflow-y-auto">
-          <video
-            ref={videoRef}
-            src={video.file_url}
-            controls
-            className="w-full rounded-lg bg-black"
-            onTimeUpdate={e => setCurrentTime((e.target as HTMLVideoElement).currentTime)}
-            onLoadedMetadata={e => setDuration((e.target as HTMLVideoElement).duration)}
-          />
+          <div className="flex justify-center items-center bg-black rounded-lg overflow-hidden">
+            <video
+              ref={videoRef}
+              src={video.file_url}
+              controls
+              className="max-h-[70vh] max-w-full"
+              onTimeUpdate={e => setCurrentTime((e.target as HTMLVideoElement).currentTime)}
+              onLoadedMetadata={e => setDuration((e.target as HTMLVideoElement).duration)}
+            />
+          </div>
 
           <div className="bg-gray-800 rounded-xl p-4">
             {/* Timeline bar */}
